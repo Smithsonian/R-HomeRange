@@ -1,0 +1,363 @@
+---
+title: "Introduction to Home Range Estimation"
+date: "25 September 2017"
+output:
+  html_document: default
+  #pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Home Range
+
+The concept of an animals home range has been discussed and debated by researchers and wildlife managers for decades. First described by Burt in 1943, a home range is the area occupied by an individual during normal everyday activities (i.e., mating, feeding, caring for young). A home range contains all the necessary resources to insure survival and reproduction. Home ranges are useful to learn how animals utilize space, to estimate areal needs, or to provide a measure of habitat use. Home ranges, however, may vary considerably in size between individuals or populations and can have irregular shapes that vary between seasons or years.
+
+The primary component necessary to estimate home range is the repetitive collection of an animals position over time. Most often, especially recently, these data are collected via satellite telemetry (e.g., GPS, Argos). Other data collection methods include trapping records, triangulation via VHF radio telemetry, and visual observation. The longer time period that data are collected, the better your estimate of home range will be. 
+
+### Estimating Home Range
+
+Once data are collected, they are mapped as a series of points so that differenct extrapolation techniques can be applied. These methods range from being extremely simplistic (i.e., Minimum Convex Polygon) to more statistically complex (i.e., Autocorrelated Kernel Density Estimation). Your choice of a home range estimator should be based on a thorough understanding of the *pros* and *cons* of each estimator **and** the goals of your analysis.
+
+Here, we will focus on three home range estimators (Minimum Convex Polygons (MCP), Utilization Distributions (UD) - also known as Kernel Home Ranges, and Local Convex Hulls (LoCoH)).These methods are:
+
+* Commonly used in the literature;
+* Can be calculated using freely available statistical programs, like [R](https://cran.r-project.org/);  
+* Produce output that fit with our intuitive understanding of home range;
+* Have well-defined methods.
+
+Note that several other methods exist to estimate an animals home range. Many of these methods represent improvements for specific cases (i.e. including Brownian bridge models to adjust home ranges for movement and time), but are beyond a basic introduction to home range estimation.
+
+### Lab Excercise
+
+We will use [R](https://cran.r-project.org/) to calculate MCPs, UDs, and LoCoH home ranges from white-tailed deer radio-tracking data. Note, that you could also calculate these home ranges using GIS software packages such as ArcGIS and QGIS. A lab excercise, with instructions in QGIS, accompanies this lecture material. Similar steps could be completed in ArcGIS. 
+
+Goals of this excercise are to:
+
+* Calculate home ranges based on location data for animals collected from field studies. 
+*	Learn how to choose input parameters for the different home range calculations.
+*	Learn how the different techniques utilize the location data in their area estimation.
+*	Compare the methods to better understand the advantages and disadvantages.
+
+#### Minimum Convex Polygons (MCPs)
+
+Minimum Convex Polygons (MCP) are probably the most commonly used tool for estimating home ranges. They are appealing because of their simplicity and because they have been widely used in wildlife and ecology research, going back to some of the earliest home range studies. Because of the length of time that MCPs have been calculated, they continue to be used as a comparison to previous studies. MCPs are easily constructed by connecting the outermost points of the location data to produce a polygon that contains all locations. Note, however, that this method tends to overestimate home range size because:
+
+1) MCPs are unduly influenced by outliers,
+2) May include vast areas that are not actually used by the animal. 
+
+Start with setting your working directory. Use `getwd()` to determine your current working directory. If necessary, use the `setwd()` command. To determine your current working directory, type: 
+
+```{r, eval = F}
+getwd()
+#setwd("D:/whatever")
+```
+
+Does your installation of [R](https://cran.r-project.org/) have all the required packages to complete the analysis? Once installed, you only need to load them at the start of your script.  Use `install.packages()` if the package needs to be installed from the source and choose a mirror that is closest to your location.
+
+Load Packages:
+```{r Library,message=FALSE,warning=FALSE}
+#install.packages("packagename")
+library(sp)
+library(rgdal)
+library(adehabitatHR)
+library(proj4)
+#library(rgeos)
+```
+
+Read the shapefile of deer locations into [R](https://cran.r-project.org/) using the `readOGR` function.  Once loaded, you will be prompted with a brief summary of the number of features (points) and fields within the file. Use `help()` to determine the functions requirements:
+```{r Read}
+deer10.sp <- readOGR(dsn=getwd(), layer="pts10")
+```
+
+Summarize the parameters. Is it a SpatialPointsDataFrame?
+```{r Class}
+class(deer10.sp)
+```
+
+What are the fields or column headings that are included in the file?
+```{r Names}
+names(deer10.sp)
+```
+
+To view the data in the file, type:
+```{r Head}
+head(deer10.sp)
+```
+
+To summarize the files, type:
+```{r Summarize}
+summary(deer10.sp)
+```
+
+To get information on the dataframe structure, type:
+```{r Structure}
+str(deer10.sp)
+```
+
+From this output, we can see that the file is projected to UTM Zone 17, NAD83 datum. These data were imported with the projection file from the shapefile. We also see that [R](https://cran.r-project.org/) thinks *Animal_ID* is a continuous variable. To change this to a factor, we need to specify the data format:
+
+```{r Factor}
+deer10.sp$Animal_ID <- as.factor(deer10.sp$Animal_ID)
+str(deer10.sp)
+```
+
+Visualize the data points:
+```{r Visualize}
+plot(deer10.sp)
+```
+
+Alternatively, you could read data directly into [R](https://cran.r-project.org/) from a comma delimited file (e.g., .csv). In this case, you need to define the projection and the data type. Otherwise, [R](https://cran.r-project.org/) will not recognize the X and Y columns as geographic data point.  Here, we provide the data for two deer:
+
+```{r TwoDeer}
+# Read the ascii file
+deer.all <- read.csv("deer_all.csv")
+# Check its class
+class(deer.all)
+# Set the coordinates
+coordinates(deer.all) <- c("x","y")
+# Define the projection
+proj4string(deer.all) <- CRS("+proj=utm +zone=17 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")
+# Now check the class again
+class(deer.all)
+deer.all$Animal_ID <- as.factor(deer.all$Animal_ID)
+# Plot data points for the two deer
+plot(deer.all, col=deer.all$Animal_ID)
+```
+
+Calculate the MCP from the 'deer.all' dataset. Use `help(mcp)` for information on the function.
+```{r MCP}
+deer.all.mcp <- mcp(deer.all, percent = 100)
+plot(deer.all.mcp, col=3:4)
+# Overlay the points
+plot(deer.all, col= deer.all$Animal_ID, add = TRUE)
+```
+
+Reducing the number of points included in the MCP can reduce the influence of outliers. We can specify to leave out 10% of the points that are the furthest area from the centerpoint (i.e. include 90% of the points).
+```{r MCP90}
+deer.all.mcp90 <- mcp(deer.all, percent = 90)
+# Look at the MCP areas
+deer.all.area <-mcp.area(deer.all, percent = seq(20,100, by = 5), unin = "m", unout = "km2") 
+plot(deer.all.mcp90, col=NA, border=unique(deer.all$Animal_ID))
+plot(deer.all, col=deer.all$Animal_ID, add=TRUE)
+```
+
+Summarize the area of each MCP
+```{r MCPSummary}
+deer.all.mcp
+deer.all.mcp90
+```
+
+**Question A1**: How different are the home range estimates between 90% and 100%?
+
+**Question A2**: What are the units for the area? How would you determine the units?
+
+**Question A3**: How many polygons were created? Do they overlap? 
+
+Export results to shapefiles:
+```{r MCPExport}
+writeOGR(deer.all.mcp, dsn=getwd(), "deerallmcp", driver='ESRI Shapefile', overwrite_layer=TRUE)
+writeOGR(deer.all.mcp90, dsn=getwd(), "deerallmcp90", driver='ESRI Shapefile', overwrite_layer=TRUE)
+```
+
+#### Kernels 
+
+Kernel home ranges were developed to adjust home range size based on the spatial distribution of points. Thus, they are a major improvement to MCPs and are now perhaps the most widely used technique to calculate home range (note that their acceptance by researchers does not mean that they are appropriate statistically, as we will see). The general premise with kernal home ranges is that areas with a greater density of points (i.e., greater use) should be weighted more importantly than areas with fewer points (i.e., have a higher density). By overlaying the points on a grid, we can determine the density of points for each grid cell and determine the frequency distribution of points along the x and y axis. We can then approximate the probability of animal use within each cell. 
+
+Because the distribution of points is not complete across an animals home range, we use a smoothing parameter to estimate the density within each grid cell. This smoothing parameter can have huge effects on results and is determined based on the standard deviations for the x and y coordinates, as well as their covariance. Referred to as the Utilization Distribution (UD), the UD presents the probability density of points within each grid cell across the home range (Calenge 2011). A 50% home range is often referred to as an animals *core* area, while a 95% home range is used as a measure of total space use after removal of potential outliers. ![HomeRange](Kernel.png)
+
+Kernel home ranges, however, also have a variety of drawbacks.  These include:
+
+*	An assumption that the data follow a specific underlying distribution (i.e. a bivariate normal distribution).
+* The reliance on two parameters that are chosen relatively arbitrarily:
+    + The smoothing parameter
+    + The grid cell size/extent
+* Over-inflated smoothing values when dealing with common multimodel distributions (i.e. animals that have two or more major core areas), which can lead to an overestimation of the animals home range.
+* No recognition of the order of points in time (i.e., the method views the data as a spatial point process with no time component). This may lead to inclusion of areas that are not used by the animal (this has been addressed with new methods such as Brownian bridge kernel method and biased random bridge kernel method).
+
+The calculation of the smoothing parameter (referred to as *h*) and grid cell size are especially problematic, usually being set by rules of thumb or worse, by what looks reasonable to the eye.  Additionally, values are rarely reported in published papers, making results difficult to recreate and compare between studies. Kernel home ranges can also be computationally intensive, especially when datasets are large, making them difficult to use. 
+
+Using the `deer.all` dataset that you have already loaded, calculate a standard kernel using the defaults. Remember to use `help(kernelUD)` for additional information on any of the functions.
+```{r Kernel}  
+kud_deer1 <- kernelUD(deer.all)
+```
+
+Plot the result:
+```{r KernelPlot}
+# Use Image to plot, since the result of kernelUD is a raster.  
+image(kud_deer1)
+```
+
+The resulting output does not look great. It does not provide a lot of resolution for the points and seems to only display circular core areas with the highest point densities.
+
+**Question B1**: What are the smoothing factors for each deer? 
+
+```{r Checkh}
+# Note that results are saved in a list, which means you have to use a different syntax to view the data (`[[#]]`)
+kud_deer1[[1]]@h
+kud_deer1[[2]]@h
+```
+
+Here, the function fits a smoothing function to each animal (using the *h*-ref method). We can, however, set the *h*-value manually. Experiment with different smoothing factors and examine the results.
+```{r KernelManual}
+kud_deer2 <- kernelUD(deer.all, h = 40)
+image(kud_deer2)
+
+# Or, use a larger h
+kud_deer3 <- kernelUD(deer.all, h = 65)
+image(kud_deer3)
+```
+
+**Question B2**: What effect does different smoothing factors have on results?  Why are the results different between animals?
+
+These comparisons show that a smaller *h*-value tends to more closely approximate the point pattern. That is, less information is smoothed. 
+
+One method that is commonly used to estimate *h* is Least Squares Cross Validation (LSCV). LSCV minimizes the mean square error in the difference between the volume of the observed and estimated UD (Calenge 2011). LSCV can be problematic and cannot be calculated if there are positions with the exact same x and y value (e.g., a nest site or den). If you have this problem with your data, add a very small value to the x and y locations to slightly jitter the points.
+
+```{r LSCV}
+kud_deer4 <- kernelUD(deer.all, h="LSCV")
+image(kud_deer4)
+```
+
+Similarly, we can assess the influence of the cell size on resulting UDs.  Try inputing different grid cell sizes. The greater the cell size, the finer the resolution and the more memory that is required to calculate the estimate.
+```{r Grid}
+kud_deer5 <- kernelUD(deer.all, grid=10)
+image(kud_deer5)
+
+kud_deer6 <- kernelUD(deer.all, grid=100)
+image(kud_deer6)
+
+kud_deer6 <- kernelUD(deer.all, grid=500)
+image(kud_deer6)
+```
+
+**Question B3**: Which grid cell size is most appropriate.  What is more problematic, a large or small grid cell size?
+
+##### A Way Forward
+
+With all these choices, it is best to keep the grid cell sizes and extents the same between individuals. This will allow comparability between home ranges. The simplest way to do this is to generate an ASCII grid base on your location data and define the cell size.
+```{r BaseGrid}
+# Load the 'area.shp' file, which is simply a shapefile which has 4 points at each corner to define the extent.
+# Then use the ascgen function (see help(ascgen) to create a 10-meter grid over the study area. 
+# Describe the grid by using the gridparameters function.
+study_area <- readOGR(dsn=getwd(), layer="area")
+base.grd <- ascgen(study_area, cellsize=10)
+gridparameters(base.grd)
+# Draw the image if you'd like: image(base.grd)
+```
+
+Create a final kernel home range, using LSCV and the base grid created above.
+```{r BaseGrid2}
+# Specify the base.grid which will be used in all calculations, standardizing result.
+kud_deer <- kernelUD(deer.all, h="LSCV", grid=base.grd)
+image(kud_deer)
+
+# Determine your h values generated by the LSCV method
+kud_deer[[1]]@h
+kud_deer[[2]]@h
+
+# Determine if the LSCV converged
+# The output from this command shows you the iterations R runs through to determine the best value for h.  You can plot this to see how it approaches h.
+plotLSCV(kud_deer)
+```
+
+Usually you want to have home range sizes for different percentages (i.e. a 95%, 75%, and 50% home ranges). To calculate different home range levels and plot them, type:
+```{r KHR}
+hr.areas <- kernel.area(kud_deer, percent = seq(10, 95, by = 5))
+hr.areas
+plot(hr.areas)
+```
+
+**Question B4**: Do you see an obvious patterns that suggests which kernel estimates to report?  
+
+You can see that this is difficult to do, but we can also visualize the different kernels with contour lines to think about this further:
+
+```{r KContour}
+# Get the contour volumes
+deer.all.vud <- getvolumeUD(kud_deer)
+image(deer.all.vud[[1]])
+title("Home Range Grid for Deer #10")
+hrmap.no10<- as.image.SpatialGridDataFrame(deer.all.vud[[1]]) 
+contour(hrmap.no10, add=TRUE) 
+```
+
+**Question B4**: How would you draw the same result for the other deer (Deer #11)?
+
+Create shapefiles for each of the kernel home ranges. Generate polygons:
+```{r KVertices}
+deer.all.hr95 <- getverticeshr(kud_deer, percent=95)
+deer.all.hr75 <- getverticeshr(kud_deer, percent=75)
+deer.all.hr50 <- getverticeshr(kud_deer, percent=50)
+```
+
+Plot the polygon for 50% kernel home range and the deer locations
+```{r KPlot}
+plot(deer.all.hr50, col=3:4)
+plot(deer.all, col=deer.all$Animal_ID, add=TRUE)
+```
+
+Write shapefiles for the different kernel home ranges for import into ArcMap or QGIS
+```{r KWrite}
+writeOGR(deer.all.hr95, dsn= getwd(), "deerallhr95", driver = "ESRI Shapefile",overwrite_layer=TRUE)
+writeOGR(deer.all.hr75, dsn= getwd(), "deerallhr75", driver = "ESRI Shapefile",overwrite_layer=TRUE)
+writeOGR(deer.all.hr50, dsn= getwd(), "deerallhr50", driver = "ESRI Shapefile",overwrite_layer=TRUE)
+```
+
+Convert the UD estimate to a grid and export:
+```{r KGrid}
+deer.grd.raw<-estUDm2spixdf(kud_deer)
+deer.grd.perc<-estUDm2spixdf(getvolumeUD(kud_deer))
+
+# Export to a Geotiff
+writeGDAL(deer.grd.raw, fname = "deerhrraw.tif", drivername = "GTiff", type = "Float32")
+writeGDAL(deer.grd.perc, fname = "deerhrperc.tif", drivername = "GTiff", type = "Float32")
+```
+
+#### Local Convex Hulls (LoCoH)
+
+Local Convex Hull (LoCoH) home ranges are an extension of MCP home ranges, resolving many of the problems of this initial home range estimator (Getz et al. 2007, Calenge 2011). LoCoH creates small MCPs for every location with its nearest neighbors. LoCoH then adds up the hulls from the smallest to the largest to create isopleths and Utilization Distributions. The % isopleths are based on the percent positions that each isopleth encloses. 
+
+The greatest challenge with LoCoH home ranges is to determine how many neighbors should be included in each of the polygon boundaries. This parameter can be specified iteratively (*k*), relative to a minium distance (*r*) , or linked to point density (*a*). See `??locoh` for additional information.
+
+To investigate how the overall home range area increases with the number of points, we can generate *k* over a sequence of values. We can then plot these values in reference to the home range size. Think of *k* as the equivalent to the smoothing factor *h* in kernel home range estimates. What you are looking for is a rough estimate of when the plot asymptotes. This value can then be used across all animals for comparison.  
+
+```{r LoCoH.Sequence}
+deer.LoCoH.area <- LoCoH.k.area(deer.all, krange = seq(11,20), percent = 100)
+deer.LoCoH.area
+```
+
+Calculate LoCoH home ranges with a *k*-value of 16.
+```{r LoCoH.Home}
+deer.LoCoH <- LoCoH.k(deer.all, 16)
+plot(deer.LoCoH)
+```
+
+**Question C1**: What happens to the results when you change the *k*-value?
+
+Calculate separate home ranges for each individual and export them to shapefiles
+```{r LoCoH.Export}
+# Animal 1
+no10.LoCoH <- deer.LoCoH[[1]]
+plot(no10.LoCoH)
+writeOGR(no10.LoCoH, dsn= getwd(), "no10.LoCoH", driver = "ESRI Shapefile",overwrite_layer=TRUE)
+
+# Animal 2
+no11.LoCoH <- deer.LoCoH[[2]]
+plot(no11.LoCoH)
+writeOGR(no11.LoCoH, dsn= getwd(), "no11.LoCoH", driver = "ESRI Shapefile",overwrite_layer=TRUE)
+```
+
+#### Other Resources
+
+AniMove—How to analyze movement data, including information on Kernel UDs and MCPs:
+https://trac.faunalia.it/animove/wiki/AnimoveHowto
+
+LoCoH: 
+https://nature.berkeley.edu/~ajlyons/locoh/
+
+This manual also contains:
+
+* A short reference for common [R](https://cran.r-project.org/) commands
+* A tutorial for adehabitatHR by Calenge (2011) with reference to all home range commands used in this exercise and more.
+* A publication on different ways to calculate LoCoH
